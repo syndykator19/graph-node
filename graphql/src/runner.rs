@@ -184,9 +184,23 @@ where
         let mut by_block_constraint = query.block_constraint()?.into_iter();
         let (bc, selection_set) = by_block_constraint.next().unwrap();
 
-        let store = self.store.cheap_clone();
-        let (resolver, block_ptr) =
-            StoreResolver::at_block(&self.logger, store, bc, query.schema.id().clone()).await?;
+        // We need to use the same `QueryStore` for the entire query to ensure
+        // we have a consistent view if the world, even when replicas, which
+        // are eventually consistent, are in use. If we run different parts
+        // of the query against different replicas, it would be possible for
+        // them to be at wildly different states, and we might unwittingly
+        // mix data from different block heights even if no reverts happen
+        // while the query is running. `self.store` can not be used after this
+        // point, and everything needs to go through the `store` we are
+        // setting up here
+        let store = self.store.cheap_clone().query_store(false);
+        let (resolver, block_ptr) = StoreResolver::at_block(
+            &self.logger,
+            store.cheap_clone(),
+            bc,
+            query.schema.id().clone(),
+        )
+        .await?;
         let mut result = execute(selection_set, block_ptr, resolver).await;
 
         // We want to optimize for the common case of a single block constraint, where we can avoid
@@ -197,7 +211,7 @@ where
             for (bc, selection_set) in by_block_constraint {
                 let (resolver, block_ptr) = StoreResolver::at_block(
                     &self.logger,
-                    self.store.clone(),
+                    store.cheap_clone(),
                     bc,
                     query.schema.id().clone(),
                 )

@@ -443,7 +443,7 @@ fn execute_subgraph_query_internal(
         let logger = logger.clone();
         let (resolver, _block_ptr) = return_err!(rt.block_on(StoreResolver::at_block(
             &logger,
-            STORE.clone(),
+            STORE.clone().query_store(false),
             bc,
             query.schema.id().clone()
         )));
